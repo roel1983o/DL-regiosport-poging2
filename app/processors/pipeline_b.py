@@ -1,32 +1,55 @@
 # app/processors/pipeline_b.py
 from __future__ import annotations
-import os, pathlib, shutil, subprocess, tempfile, textwrap, glob
+import os, sys, json, pathlib, shutil, subprocess, tempfile
 from typing import Dict, Any
 
-VERSION = "pipeline_b-notebook-subproc-runner-2025-10-30"
+VERSION = "pipeline_b-notebook-exec-2025-10-30"
 
+# De runner voert een .ipynb uit door alle code-cellen te "exec'en" (geen Jupyter-kernel nodig).
 RUNNER_CODE = r"""
-import os, sys, nbformat
-from nbclient import NotebookClient
+import os, sys, json, types, io
+from pathlib import Path
+
+def run_notebook(ipynb_path: str):
+    with open(ipynb_path, "r", encoding="utf-8") as f:
+        nb = json.load(f)
+
+    # Verzamel code uit alle code-cellen in volgorde
+    code_pieces = []
+    for cell in nb.get("cells", []):
+        if cell.get("cell_type") == "code":
+            src = cell.get("source", "")
+            if isinstance(src, list):
+                src = "".join(src)
+            code_pieces.append(src)
+
+    code_all = "\n\n# --- cell separator ---\n\n".join(code_pieces)
+
+    # Voer uit in een schone module-namespace
+    mod = types.ModuleType("__nbexec__")
+    # Geef env-variabele INPUT_XLSX door aan deze namespace (optioneel)
+    mod.INPUT_XLSX = os.environ.get("INPUT_XLSX", "")
+    # Zet een current working directory op de temp-map (is al zo, maar expliciet is netjes)
+    mod.__dict__["__name__"] = "__nbexec__"
+
+    compiled = compile(code_all, filename=str(ipynb_path), mode="exec")
+    exec(compiled, mod.__dict__)
 
 if __name__ == "__main__":
-    nb_path = sys.argv[1]
-    exec_out = sys.argv[2]
-    # Door de parent (onze webapp) gezet:
-    #   - CWD = tijdelijke map
-    #   - env['INPUT_XLSX'] = pad naar upload
-    with open(nb_path, "r", encoding="utf-8") as f:
-        nb = nbformat.read(f, as_version=4)
-    client = NotebookClient(nb, timeout=600, kernel_name="python3", allow_errors=False)
-    client.execute()
-    with open(exec_out, "w", encoding="utf-8") as f:
-        nbformat.write(nb, f)
+    if len(sys.argv) < 2:
+        print("Usage: runner.py <notebook.ipynb>", file=sys.stderr)
+        sys.exit(2)
+    run_notebook(sys.argv[1])
 """
+
+def _python_exe() -> str:
+    # Render gebruikt een venv; sys.executable wijst naar de juiste interpreter
+    return sys.executable
 
 def process(input_xlsx_path: str, options: Dict[str, Any], output_dir: str) -> Dict[str, Any]:
     """
-    Draait het originele notebook DL_amateursport_overig.ipynb in een apart Python-subprocess
-    (met nbclient, maar niet via 'python -m nbclient'). Zo krijgen we weer jouw exacte CUE-output.
+    Draait het originele notebook DL_amateursport_overig.ipynb door code-cellen te executen
+    in een los Python-subprocess (zonder Jupyter kernel). Zo krijg je dezelfde CUE-output.
     """
     out_dir = pathlib.Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -38,43 +61,45 @@ def process(input_xlsx_path: str, options: Dict[str, Any], output_dir: str) -> D
     if not nb_path.exists():
         raise FileNotFoundError(f"Notebook niet gevonden: {nb_path}. Plaats het in app/notebooks/")
 
-    # Draai alles in een tijdelijke werkmap, zodat relatieve paden/uitvoer netjes bij elkaar staan
-    with tempfile.TemporaryDirectory(prefix="nb_run_overig_") as tmpdir:
+    # Draai in een tijdelijke map; het notebook schrijft hier z'n .txt naartoe
+    with tempfile.TemporaryDirectory(prefix="nb_exec_overig_") as tmpdir:
         tmp = pathlib.Path(tmpdir)
 
-        # Schrijf een mini-runner die nbclient programmatic aanroept
+        # Runner-script wegschrijven
         runner_py = tmp / "runner.py"
         runner_py.write_text(RUNNER_CODE, encoding="utf-8")
 
-        # Zorg dat het Excelpad beschikbaar is voor het notebook (zoals voorheen)
+        # Omgeving meegeven aan notebook-code
         env = os.environ.copy()
         env["INPUT_XLSX"] = str(input_xlsx_path)
+        # Eventueel extra envs toevoegen als je notebook die verwacht:
+        # env["OUTPUT_DIR"] = str(tmp)  # als je notebook dat gebruikt
 
-        # Voer het runner-script uit
-        exec_out = tmp / "executed.ipynb"
-        cmd = [sys_executable(), str(runner_py), str(nb_path), str(exec_out)]
-        result = subprocess.run(
-            cmd, cwd=tmp, env=env, capture_output=True, text=True, timeout=900
-        )
+        # Voer runner uit
+        cmd = [_python_exe(), str(runner_py), str(nb_path)]
+        result = subprocess.run(cmd, cwd=tmp, env=env, capture_output=True, text=True, timeout=900)
+
         if result.returncode != 0:
             raise RuntimeError(
                 "Notebook uitvoer mislukt:\n"
                 f"STDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
             )
 
-        # Zoek de .txt(s) die het notebook heeft gemaakt
+        # Zoek de .txt die het notebook produceert
         txt_files = list(tmp.rglob("*.txt"))
         if not txt_files:
-            # Toon debuginformatie als het notebook wel draaide maar niks schreef
+            # Geen txt gevonden? Geef debughulp terug.
             raise RuntimeError(
-                "Notebook draaide, maar er is geen .txt-output gevonden in de tijdelijke map."
+                "Notebook draaide, maar er is geen .txt-output gevonden in de tijdelijke map.\n"
+                "Controleer in het notebook waar het outputbestand wordt weggeschreven.\n"
+                f"Temp map: {tmp}"
             )
 
-        # voorkeur: bestand met 'opmaakscript' in de naam
+        # Kies bij voorkeur een bestand met 'opmaakscript' in de naam, anders de eerste
         target = next((p for p in txt_files if "opmaakscript" in p.name.lower()), txt_files[0])
         shutil.copyfile(target, out_path)
 
-    # Lees voor preview
+    # Preview lezen
     try:
         with open(out_path, "r", encoding="utf-8", errors="ignore") as f:
             text_output = f.read()
@@ -85,10 +110,3 @@ def process(input_xlsx_path: str, options: Dict[str, Any], output_dir: str) -> D
         "text_output": text_output,
         "attachments": [{"name": out_name, "path": str(out_path)}],
     }
-
-def sys_executable() -> str:
-    """
-    Retourneert het huidige Python-executable pad (compatibel met Render/venv).
-    """
-    import sys
-    return sys.executable
