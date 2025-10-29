@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sportuitslagen • Redactie-tool</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="container">
+    <h1>🏟️ Sportuitslagen • Redactie-tool</h1>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="container small muted">
+    Gemaakt voor GitHub + Render • FastAPI • © {{ 2025 }}
+  </footer>
+  <script>
+    function copyPreview() {
+      const el = document.getElementById('preview');
+      if (!el) return;
+      navigator.clipboard.writeText(el.value || el.innerText || '').then(() => {
+        const btn = document.getElementById('copyBtn');
+        if (btn) { btn.innerText = 'Gekopieerd!'; setTimeout(() => btn.innerText='Kopieer', 1500); }
+      });
+    }
+  </script>
+</body>
+</html>

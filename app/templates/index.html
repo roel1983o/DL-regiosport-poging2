@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+  <section class="titlewrap">
+    <h1 class="page-title">DL regiosport codefixer</h1>
+  </section>
+
+  <section class="card">
+    <h2>Uitslagen amateursport voetbal</h2>
+    <p class="muted">Upload het ingevulde Excelbestand (.xlsx). Klik daarna op de knop hieronder. Je krijgt dan een txt-bestand dat je in CUE moet plakken.</p>
+    <form method="post" action="/process" enctype="multipart/form-data" class="grid">
+      <input type="hidden" name="pipeline" value="A">
+      <input type="hidden" name="competition" value="">
+      <input type="hidden" name="match_date" value="">
+      <div class="col-span-2">
+        <input type="file" name="file" required class="input">
+      </div>
+      <div>
+        <button class="btn" type="submit">Maak CUE export (.txt)</button>
+      </div>
+      <div>
+        <a class="btn ghost" href="/template/voetbal">Download leeg invulbestand (.xlsx)</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Uitslagen amateursport overig</h2>
+    <p class="muted">Upload het ingevulde Excelbestand (.xlsx). Klik daarna op de knop hieronder. Je krijgt dan een txt-bestand dat je in CUE moet plakken.</p>
+    <form method="post" action="/process" enctype="multipart/form-data" class="grid">
+      <input type="hidden" name="pipeline" value="B">
+      <input type="hidden" name="competition" value="">
+      <input type="hidden" name="match_date" value="">
+      <div class="col-span-2">
+        <input type="file" name="file" required class="input">
+      </div>
+      <div>
+        <button class="btn" type="submit">Maak CUE export (.txt)</button>
+      </div>
+      <div>
+        <a class="btn ghost" href="/template/overig">Download leeg invulbestand (.xlsx)</a>
+      </div>
+    </form>
+  </section>
+
+  {% if ok %}
+  <section class="card">
+    <h2>Resultaat</h2>
+    <div class="grid">
+      <div class="col-span-2">
+        <label class="label">Preview</label>
+        <textarea id="preview" class="input mono" rows="16" readonly>{{ preview }}</textarea>
+      </div>
+      <div>
+        <button id="copyBtn" class="btn" onclick="copyPreview()">Kopieer</button>
+      </div>
+      <div>
+        {% if files and files|length > 0 %}
+          <div class="label">Downloads</div>
+          <ul>
+            {% for f in files %}
+              <li><a class="link" href="{{ f.url }}">{{ f.name }}</a></li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="muted">Geen extra bestanden.</div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+{% endblock %}
