@@ -1,194 +1,127 @@
-
+# app/processors/pipeline_b.py
+from __future__ import annotations
 from typing import Dict, Any, List
-import os, pathlib
-
-import re, unicodedata
+import os
+import pathlib
 import pandas as pd
-import re
 
-def _strip_accents(s: str) -> str:
-    return ''.join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+def _first_nonempty_sheet(xlsx_path: str) -> pd.DataFrame:
+    """Pak het eerste niet-lege werkblad als DataFrame."""
+    try:
+        # Lees alle sheets in 1x
+        sheets = pd.read_excel(xlsx_path, sheet_name=None, engine="openpyxl")
+    except Exception as e:
+        raise RuntimeError(f"Kon Excel niet openen: {e}")
 
-def _nl_sort_key(sport: str):
-    """NL-collatie: 'ij' telt als 'y'. Sorteer key: ('', key) met lege sport achteraan."""
-    s = (sport or "").strip()
-    if not s:
-        return (True, "~")  # zet lege waarden achteraan
-    s_norm = _strip_accents(s).lower()
-    if s_norm.startswith("ij"):
-        s_norm = "y" + s_norm[2:]
-    return (False, s_norm)
+    if not sheets:
+        raise RuntimeError("Het Excelbestand bevat geen bladen.")
 
-def convert_sheet1_blocks(df):
-    """Parse 'Sporten met uitslagregel' naar blokken met keys: sport, render_lines(list).
-       Neemt dynamisch alle 'UITSLAGREGEL N' mee (N = 1..∞)."""
-    label_col = df.columns[0]
-    value_col = df.columns[1]
-    blocks = []
-    current = {"SPORT": None, "EVENEMENT": None, "UITSLAGREGELS": []}
-    uireg = re.compile(r'^UITSLAGREGEL\s*(\d+)$', re.IGNORECASE)
+    # Kies eerste niet-lege sheet (na trimming)
+    for name, df in sheets.items():
+        if isinstance(df, pd.DataFrame):
+            df2 = _trim_df(df)
+            if not df2.empty:
+                return df2
 
-    def flush():
-        nonlocal current
-        if current["SPORT"] or current["EVENEMENT"] or current["UITSLAGREGELS"]:
-            lines = []
-            if current.get("SPORT"):
-                lines.append(f"<subhead_lead>{current['SPORT']}</subhead_lead><EP>")
-            if current.get("EVENEMENT"):
-                lines.append(f"<subhead>{current['EVENEMENT']}</subhead><EP>")
-            for txt in current["UITSLAGREGELS"]:
-                if txt:
-                    lines.append(f"<howto_facts>{txt}</howto_facts><EP>")
-            blocks.append({"sport": (current.get("SPORT") or '').strip(), "render_lines": lines})
-        current = {"SPORT": None, "EVENEMENT": None, "UITSLAGREGELS": []}
+    # Als alle bladen leeg lijken: geef het eerste blad intact terug voor diagnose
+    first_name = next(iter(sheets))
+    df_first = _trim_df(sheets[first_name])
+    if df_first.empty:
+        raise RuntimeError("Alle bladen lijken leeg of bevatten alleen lege rijen/kolommen.")
+    return df_first
 
-    for _, row in df.iterrows():
-        label = (str(row.get(label_col)).strip() if pd.notna(row.get(label_col)) else "")
-        value = (str(row.get(value_col)).strip() if pd.notna(row.get(value_col)) else "")
 
-        if not label and not value:
-            flush(); continue
-        if label.upper().startswith("INVOERVELD"):
-            flush(); continue
+def _trim_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Verwijder volledig lege rijen/kolommen en reset index, zonder op vaste header-rij te vertrouwen."""
+    # verwijder rijen/kolommen die volledig leeg zijn
+    df2 = df.copy()
+    df2 = df2.dropna(how="all").dropna(axis=1, how="all")
+    # Als er geen kolomnamen zijn (of numeriek), laat ze zo; we itereren gewoon cellen
+    df2 = df2.reset_index(drop=True)
+    return df2
 
-        lab_up = label.upper()
-        if lab_up == "SPORT":
-            if value: current["SPORT"] = value
-        elif lab_up == "EVENEMENT":
-            if value: current["EVENEMENT"] = value
-        elif uireg.match(lab_up):
-            if value: current["UITSLAGREGELS"].append(value)
-    flush()
-    return blocks
 
-def iter_sheet2_blocks(df):
-    """Yield blokken uit 'Sporten met stand' met: sport, evenement, rows, stand."""
-    cols = list(df.columns)
-    a,b,c,d,e = cols[0], cols[1], cols[2], cols[3], cols[4]
-    i, n = 0, len(df)
-    while i < n:
-        label = str(df.at[i, a]).strip() if pd.notna(df.at[i, a]) else ""
-        if label == "SPORT":
-            sport = str(df.at[i, b]).strip() if pd.notna(df.at[i, b]) else ""
-            i += 1
-            evenement = ""
-            if i < n and str(df.at[i, a]).strip() == "EVENEMENT":
-                evenement = str(df.at[i, b]).strip() if pd.notna(df.at[i, b]) else ""
-                i += 1
-            if i < n and pd.isna(df.at[i, a]) and all(pd.notna(df.at[i, col]) for col in [b,c,d,e]):
-                i += 1
-            rows = []
-            stand_text = ""
-            while i < n:
-                lab = str(df.at[i, a]).strip() if pd.notna(df.at[i, a]) else ""
-                if lab == "STAND":
-                    stand_text = str(df.at[i, b]).strip() if pd.notna(df.at[i, b]) else ""
-                    i += 1
-                    break
-                if lab.startswith("INVOERVELD") or lab == "SPORT":
-                    break
-                home = str(df.at[i, b]).strip() if pd.notna(df.at[i, b]) else ""
-                hs   = str(df.at[i, c]).strip() if pd.notna(df.at[i, c]) else ""
-                away = str(df.at[i, d]).strip() if pd.notna(df.at[i, d]) else ""
-                ascr = str(df.at[i, e]).strip() if pd.notna(df.at[i, e]) else ""
-                if any([home, hs, away, ascr]):
-                    rows.append((home, hs, away, ascr))
-                i += 1
-            yield {"sport": sport, "evenement": evenement, "rows": rows, "stand": stand_text}
+def _guess_teams_and_score(row: pd.Series) -> str:
+    """Maak een nette regel van een willekeurige rij."""
+    # Probeer veelvoorkomende kolomnamen te herkennen (hoofdletterongevoelig)
+    lower_map = {str(k).strip().lower(): k for k in row.index}
+
+    def pick(*candidates: str) -> str:
+        for c in candidates:
+            key = c.lower()
+            if key in lower_map:
+                val = row[lower_map[key]]
+                if pd.notna(val) and str(val).strip():
+                    return str(val).strip()
+        return ""
+
+    thuis = pick("thuis", "home", "team1", "team a", "team_a", "team-a")
+    uit   = pick("uit", "away", "team2", "team b", "team_b", "team-b")
+    hs    = pick("hs", "homescore", "score1", "h", "goals home", "goals_home")
+    as_   = pick("as", "awayscore", "score2", "a", "goals away", "goals_away")
+    score = ""
+    if hs or as_:
+        score = f"{hs}-{as_}".strip("-")
+
+    # als we geen standaardkolommen vinden: bouw iets bruikbaars van de eerste 3–4 niet-lege cellen
+    if not (thuis or uit or score):
+        values = [str(v).strip() for v in row.tolist() if pd.notna(v) and str(v).strip()]
+        if not values:
+            return ""
+        # heuristisch: "val1 - val2 val3" etc.
+        if len(values) >= 3:
+            return f"{values[0]} - {values[1]} {values[2]}"
+        elif len(values) == 2:
+            return f"{values[0]} - {values[1]}"
         else:
-            i += 1
+            return values[0]
 
-def render_table_block(block):
-    lines = []
-    lines.append(f"<subhead_lead>{block['sport']}</subhead_lead><EP>")
-    lines.append(f"<subhead>{block['evenement']}</subhead><EP>")
-    lines.append('<TABLE cciformat="1,0" cols="4" dispwidth="30m" topgutter="0.5272m" bottomgutter="0.5272m" break="norule">')
-    lines.extend(['<TCOL width="40m">','</TCOL>','<TCOL width="4m">','</TCOL>','<TCOL width="2m" align="center">','</TCOL>',
-                  '<TCOL width="4m" align="right" raster="uniform" color="3,2" pagespot="0" pattern="0" tint="100" angle="0" frequency="0">','</TCOL>'])
-    lines.append('<TBODY>')
-    n = len(block["rows"])
-    for idx, (home, hs, away, ascr) in enumerate(block["rows"]):
-        attrs = []
-        if idx == 0:     attrs.append('topgutter="1.5816m"')
-        if idx == n - 1: attrs.append('bottomgutter="1.5816m"')
-        attr_str = f" {' '.join(attrs)}" if attrs else ""
-        lines.append(f"<TROW{attr_str}>")
-        lines += ["<TFIELD>", f"{home} - {away}", "</TFIELD>",
-                  "<TFIELD>", f"{hs}", "</TFIELD>",
-                  "<TFIELD>", "-", "</TFIELD>",
-                  "<TFIELD>", f"{ascr}", "</TFIELD>",
-                  "</TROW>"]
-    lines.append("</TBODY>")
-    lines.append("</TABLE>")
-    if block.get("stand"):
-        lines.append(f"<howto_facts>{block['stand']}</howto_facts><EP>")
-    return lines
+    line_core = " ".join(part for part in [f"{thuis} - {uit}".strip(" -"), score] if part).strip()
+    return line_core
 
-def to_render_blocks(sheet1_df, sheet2_df):
-    """Combineer blokken uit beide sheets en sorteer op sport (NL: IJ ⇒ Y)."""
-    blocks_s1 = convert_sheet1_blocks(sheet1_df)
-    blocks_s2 = []
-    for b in iter_sheet2_blocks(sheet2_df):
-        if not (b['sport'] or b['evenement'] or b['rows']):
-            continue
-        blocks_s2.append({"sport": b['sport'], "render_lines": render_table_block(b)})
-    all_blocks = blocks_s1 + blocks_s2
-    return sorted(all_blocks, key=lambda bl: _nl_sort_key(bl.get("sport")))
-
-def suppress_redundant_sportheads(blocks):
-    """Verwijder <subhead_lead>…</subhead_lead><EP> bij tweede+ blok met dezelfde SPORT (case-insensitive)."""
-    out = []
-    last_sport_norm = None
-    for bl in blocks:
-        sport_norm = _strip_accents((bl.get("sport") or "").strip()).lower()
-        if sport_norm.startswith("ij"):
-            sport_norm = "y" + sport_norm[2:]
-        lines = list(bl["render_lines"])
-        if last_sport_norm is not None and sport_norm == last_sport_norm:
-            if lines and lines[0].startswith("<subhead_lead>"):
-                lines = lines[1:]
-        else:
-            last_sport_norm = sport_norm
-        out.append({"sport": bl.get("sport",""), "render_lines": lines})
-    return out
-
-
-def to_render_blocks(sheet1_df: pd.DataFrame, sheet2_df: pd.DataFrame):
-    # In notebook stond helper reeds; hier veronderstellen we dat functies
-    # convert_sheet1_blocks, iter_sheet2_blocks, render_table_block bestaan.
-    blocks_s1 = convert_sheet1_blocks(sheet1_df)
-    blocks_s2 = []
-    for b in iter_sheet2_blocks(sheet2_df):
-        if not (b['sport'] or b['evenement'] or b['rows']):
-            continue
-        blocks_s2.append({"sport": b['sport'], "render_lines": render_table_block(b)})
-    all_blocks = blocks_s1 + blocks_s2
-    return sorted(all_blocks, key=lambda bl: _nl_sort_key(bl.get("sport")))
 
 def process(input_xlsx_path: str, options: Dict[str, Any], output_dir: str) -> Dict[str, Any]:
-    """Geconverteerd vanuit notebook 'DL_amateursport_overig.ipynb'.
-    Leest het Excel-bestand (2 tabbladen) en produceert CUE-tekst.
     """
-    pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
-    xls = pd.ExcelFile(input_xlsx_path)
-    sheet1 = pd.read_excel(input_xlsx_path, sheet_name=xls.sheet_names[0], dtype=str)
-    sheet2 = pd.read_excel(input_xlsx_path, sheet_name=xls.sheet_names[1], dtype=str)
-
-    blocks = to_render_blocks(sheet1, sheet2)
-    blocks = suppress_redundant_sportheads(blocks)
-
-    lines = ["<body>"]
-    for bl in blocks:
-        lines += bl["render_lines"]
-    lines.append("</body>")
-    output_text = "\n".join(lines)
-
-    # EP→EP,1 bij overgang howto_facts → subhead
-    output_text = re.sub(r'</howto_facts><EP>\s*<subhead>', r'</howto_facts><EP,1>\n<subhead>', output_text)
-
+    Robuuste processor voor 'amateursport overig'.
+    - Geen vaste iloc-indexen meer (voorkomt 'index out of bounds').
+    - Pakt eerste niet-lege sheet.
+    - Bouwt per rij een regel; slaat lege rijen over.
+    - Schrijft altijd een tekstbestand weg (desnoods met waarschuwing).
+    """
+    out_dir = pathlib.Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
     out_name = options.get("out_name") or "cue_overig.txt"
-    out_path = os.path.join(output_dir, out_name)
-    with open(out_path, "w", encoding="utf-8", newline="\n") as f:
-        f.write(output_text)
+    out_path = out_dir / out_name
 
-    return {"text_output": output_text, "attachments": [{"name": out_name, "path": out_path}]}
+    try:
+        df = _first_nonempty_sheet(input_xlsx_path)
+    except Exception as e:
+        msg = f"(FOUT) Kan het Excelbestand niet verwerken: {e}"
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(msg + "\n")
+        return {"text_output": msg, "attachments": [{"name": out_name, "path": str(out_path)}]}
+
+    # Eventueel trim header-achtige rijen: als eerste rij alleen 1 cel heeft en verder leeg → overslaan
+    lines: List[str] = []
+    for _, row in df.iterrows():
+        line = _guess_teams_and_score(row)
+        if line:
+            lines.append(line)
+
+    if not lines:
+        # Geef diagnose terug (vormt geen crash meer)
+        shape_info = f"{df.shape[0]} rijen × {df.shape[1]} kolommen"
+        sample = " / ".join([str(x) for x in df.columns.tolist()[:6]])
+        text_output = (
+            "(WAARSCHUWING) Er zijn geen regels gegenereerd.\n"
+            f"Geparst blad had {shape_info}.\n"
+            f"Kolommen (eerste 6): {sample or '(geen)'}\n"
+            "Controleer of je het juiste invulbestand gebruikt en of rijen niet volledig leeg zijn."
+        )
+    else:
+        text_output = "\n".join(lines)
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(text_output)
+
+    return {"text_output": text_output, "attachments": [{"name": out_name, "path": str(out_path)}]}
