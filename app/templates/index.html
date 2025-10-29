@@ -10,19 +10,19 @@
   <p class="muted">Upload het ingevulde Excelbestand (.xlsx). Klik daarna op de knop hieronder…</p>
 
   <form id="form-voetbal" method="post" action="/process" enctype="multipart/form-data">
-    <input type="hidden" name="pipeline" value="A">
-    <div>
-      <label class="label" for="file-voetbal">Excel-bestand</label>
-      <input id="file-voetbal" type="file" name="file" required class="input">
-    </div>
+  <input type="hidden" name="pipeline" value="A">
+  <div>
+    <label class="label" for="file-voetbal">Excel-bestand</label>
+    <input id="file-voetbal" type="file" name="file_voetbal" accept=".xlsx" required class="input">
+  </div>
+  <div class="actions">
+    <button type="submit" class="btn">Maak CUE export (.txt)</button>
+    <a class="btn ghost" href="/static/templates/Invulbestand_amateursport_voetbal.xlsx" download>
+      Download leeg invulbestand (.xlsx)
+    </a>
+  </div>
+</form>
 
-    <div class="actions">
-      <button type="submit" class="btn" id="submit-voetbal">Maak CUE export (.txt)</button>
-      <a class="btn ghost" href="/static/templates/Invulbestand_amateursport_voetbal.xlsx" download>
-        Download leeg invulbestand (.xlsx)
-      </a>
-    </div>
-  </form>
 </section>
 
 <!-- OVERIG -->
@@ -31,19 +31,19 @@
   <p class="muted">Upload het ingevulde Excelbestand (.xlsx). Klik daarna op de knop hieronder…</p>
 
   <form id="form-overig" method="post" action="/process" enctype="multipart/form-data">
-    <input type="hidden" name="pipeline" value="B">
-    <div>
-      <label class="label" for="file-overig">Excel-bestand</label>
-      <input id="file-overig" type="file" name="file" required class="input">
-    </div>
+  <input type="hidden" name="pipeline" value="B">
+  <div>
+    <label class="label" for="file-overig">Excel-bestand</label>
+    <input id="file-overig" type="file" name="file_overig" accept=".xlsx" required class="input">
+  </div>
+  <div class="actions">
+    <button type="submit" class="btn">Maak CUE export (.txt)</button>
+    <a class="btn ghost" href="/static/templates/Invulbestand_amateursport_overig.xlsx" download>
+      Download leeg invulbestand (.xlsx)
+    </a>
+  </div>
+</form>
 
-    <div class="actions">
-      <button type="submit" class="btn" id="submit-overig">Maak CUE export (.txt)</button>
-      <a class="btn ghost" href="/static/templates/Invulbestand_amateursport_overig.xlsx" download>
-        Download leeg invulbestand (.xlsx)
-      </a>
-    </div>
-  </form>
 </section>
 
   {% if ok %}
