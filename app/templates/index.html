@@ -1,75 +1,121 @@
-{% extends "base.html" %}
-{% block content %}
-  <section class="titlewrap">
-    <h1 class="page-title">DL regiosport codefixer</h1>
-  </section>
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DL regiosport codefixer</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    .actions { display:flex; gap:12px; align-items:center; margin-top:12px; }
+    .ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .ghost:hover { border-color: var(--accent); }
+    .wrap { max-width: 900px; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <main class="container wrap">
+    <h1>DL regiosport codefixer</h1>
 
-  <!-- VOETBAL -->
-<section class="card">
-  <h2>Uitslagen amateursport voetbal</h2>
-  <p class="muted">Upload het ingevulde Excelbestand (.xlsx). Klik daarna op de knop hieronder…</p>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
 
-  <form id="form-voetbal" method="post" action="/process" enctype="multipart/form-data">
-  <input type="hidden" name="pipeline" value="A">
-  <div>
-    <label class="label" for="file-voetbal">Excel-bestand</label>
-    <input id="file-voetbal" type="file" name="file_voetbal" accept=".xlsx" required class="input">
-  </div>
-  <div class="actions">
-    <button type="submit" class="btn">Maak CUE export (.txt)</button>
-    <a class="btn ghost" href="/static/templates/Invulbestand_amateursport_voetbal.xlsx" download>
-      Download leeg invulbestand (.xlsx)
-    </a>
-  </div>
-</form>
+    <!-- ============= VOETBAL ============= -->
+    <section class="card">
+      <h2>Uitslagen amateursport voetbal</h2>
+      <p class="muted">
+        Upload het ingevulde Excelbestand (.xlsx). Klik daarna op de knop hieronder.
+        Je krijgt dan een txt-bestand dat je in CUE moet plakken.
+      </p>
 
-</section>
+      <form id="form-voetbal" method="post" action="/process" enctype="multipart/form-data" novalidate>
+        <input type="hidden" name="pipeline" value="A" />
+        <div>
+          <label class="label" for="file-voetbal">Excel-bestand</label>
+          <input id="file-voetbal" class="input" type="file" name="file_voetbal" accept=".xlsx" required />
+        </div>
 
-<!-- OVERIG -->
-<section class="card">
-  <h2>Uitslagen amateursport overig</h2>
-  <p class="muted">Upload het ingevulde Excelbestand (.xlsx). Klik daarna op de knop hieronder…</p>
+        <div class="actions">
+          <button type="submit" class="btn" id="submit-voetbal">Maak CUE export (.txt)</button>
+          <a class="btn ghost" href="/static/templates/Invulbestand_amateursport_voetbal.xlsx" download>
+            Download leeg invulbestand (.xlsx)
+          </a>
+        </div>
+      </form>
+    </section>
 
-  <form id="form-overig" method="post" action="/process" enctype="multipart/form-data">
-  <input type="hidden" name="pipeline" value="B">
-  <div>
-    <label class="label" for="file-overig">Excel-bestand</label>
-    <input id="file-overig" type="file" name="file_overig" accept=".xlsx" required class="input">
-  </div>
-  <div class="actions">
-    <button type="submit" class="btn">Maak CUE export (.txt)</button>
-    <a class="btn ghost" href="/static/templates/Invulbestand_amateursport_overig.xlsx" download>
-      Download leeg invulbestand (.xlsx)
-    </a>
-  </div>
-</form>
+    <!-- ============= OVERIG ============= -->
+    <section class="card">
+      <h2>Uitslagen amateursport overig</h2>
+      <p class="muted">
+        Upload het ingevulde Excelbestand (.xlsx). Klik daarna op de knop hieronder.
+        Je krijgt dan een txt-bestand dat je in CUE moet plakken.
+      </p>
 
-</section>
+      <form id="form-overig" method="post" action="/process" enctype="multipart/form-data" novalidate>
+        <input type="hidden" name="pipeline" value="B" />
+        <div>
+          <label class="label" for="file-overig">Excel-bestand</label>
+          <input id="file-overig" class="input" type="file" name="file_overig" accept=".xlsx" required />
+        </div>
 
-  {% if ok %}
-  <section class="card">
-    <h2>Resultaat</h2>
-    <div class="grid">
-      <div class="col-span-2">
-        <label class="label">Preview</label>
-        <textarea id="preview" class="input mono" rows="16" readonly>{{ preview }}</textarea>
-      </div>
-      <div>
-        <button id="copyBtn" class="btn" onclick="copyPreview()">Kopieer</button>
-      </div>
-      <div>
-        {% if files and files|length > 0 %}
-          <div class="label">Downloads</div>
-          <ul>
-            {% for f in files %}
-              <li><a class="link" href="{{ f.url }}">{{ f.name }}</a></li>
-            {% endfor %}
-          </ul>
-        {% else %}
-          <div class="muted">Geen extra bestanden.</div>
-        {% endif %}
-      </div>
-    </div>
-  </section>
-  {% endif %}
-{% endblock %}
+        <div class="actions">
+          <button type="submit" class="btn" id="submit-overig">Maak CUE export (.txt)</button>
+          <a class="btn ghost" href="/static/templates/Invulbestand_amateursport_overig.xlsx" download>
+            Download leeg invulbestand (.xlsx)
+          </a>
+        </div>
+      </form>
+    </section>
+
+    {% if ok %}
+      <section class="card">
+        <h2>Resultaat</h2>
+        <div class="grid">
+          <div class="col-span-2">
+            <label class="label">Preview</label>
+            <textarea id="preview" class="input mono" rows="16" readonly>{{ preview }}</textarea>
+          </div>
+          <div>
+            <button id="copyBtn" class="btn" onclick="copyPreview()">Kopieer</button>
+          </div>
+          <div>
+            {% if files and files|length > 0 %}
+              <div class="label">Downloads</div>
+              <ul>
+                {% for f in files %}
+                  <li><a class="link" href="{{ f.url }}">{{ f.name }}</a></li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <div class="muted">Geen extra bestanden.</div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+    {% endif %}
+  </main>
+
+  <script>
+    function copyPreview() {
+      const el = document.getElementById('preview');
+      if (!el) return;
+      navigator.clipboard.writeText(el.value || el.innerText || '').then(() => {
+        const btn = document.getElementById('copyBtn');
+        if (btn) { btn.innerText = 'Gekopieerd!'; setTimeout(() => btn.innerText='Kopieer', 1500); }
+      });
+    }
+
+    // kleine safeguard tegen dubbel submitten
+    function lockButton(id) {
+      const btn = document.getElementById(id);
+      if (btn) {
+        btn.disabled = true;
+        setTimeout(() => { try { btn.disabled = false; } catch(e){} }, 3000);
+      }
+    }
+    document.getElementById('form-voetbal')?.addEventListener('submit', () => lockButton('submit-voetbal'));
+    document.getElementById('form-overig')?.addEventListener('submit',  () => lockButton('submit-overig'));
+  </script>
+</body>
+</html>
